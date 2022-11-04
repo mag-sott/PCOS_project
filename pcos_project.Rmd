@@ -1,0 +1,396 @@
+---
+title: "Polycystic ovary syndrome diagnosis project"
+author: "Magdalena Sottanellli"
+date: "2022-10-18"
+output:
+  pdf_document: default
+  html_document: default
+---
+# Introduction
+Polycystic ovary syndrome (PCOS) is a common condition that affects how woman's ovaries work during the reproductive years. Women with PCOS usually suffer from irregular periods, hormonal imbalances (high level of "male" hormone androgen) and policystic ovaries. The exact cause of the disease is still unknown, as well as a cure for it. Only the symptoms can be treated. The aim of this project is to create detection and prediction model by using different machine learning algorithms.
+
+# About PCOS data set
+
+The data set used in the project is available on KAGGLE and owned by Prasoon Kottarathil. The dataset contains all physical and clinical parameters to determine PCOS and infertility related issues. Data is collected from 10 different hospitals across Kerala in India. Original data set is saved in two different files - infertility and without-infertility patients. There are 51 columns in total, of which 41 are different parameters that are used to describee our target column - PCOS (Y/N).
+
+Important notes regarding data set:
+- The unit used is feet to cm
+- Blood pressure entered as systolic and diastolic separately
+- RBS stands for Random glucose test
+- Beta-HCG cases are mentioned as Case I and II
+- Blood Group indications: A+ = 11, A- = 12, B+ = 13, B- = 14, O+ =15, O- = 16, 
+  AB+ =17, AB- = 18
+  
+# Loading and cleaning the data
+
+First we load libraries needed to perform analysis as follow:
+```{r message=FALSE, warning=FALSE}
+options(digits = 3)
+library(tidyverse)
+library(caret)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(dslabs)
+library(readxl)
+library(readr)
+library(corrplot)
+```
+
+Data has been uploaded and merged by the column 'Sl. No' with below code:
+```{r warning=FALSE}
+path_1 <- "C:/Users/A529462/Desktop/R files/PCOS project/PCOS_data_without_infertility.xlsx"
+pcos_1 <- read_excel(path_1, sheet = "Full_new")
+
+
+path_2 <- "C:/Users/A529462/Desktop/R files/PCOS project/PCOS_infertility.csv"
+pcos_2 <- read_csv(path_2)
+
+pcos <- merge(pcos_1, pcos_2, by = 'Sl. No')
+```
+
+Next, we cleaned data from duplicate columns.
+
+```{r}
+pcos <- subset (pcos, select =  -c(`Patient File No..y`,`I   beta-HCG(mIU/mL).y`,
+                                   `PCOS (Y/N).y`, `I   beta-HCG(mIU/mL).y`,
+                                   `II    beta-HCG(mIU/mL).y`, `AMH(ng/mL).y`, `...45`))
+
+```
+
+After checking the data types of the columns, some columns needed to be changed to numeric.
+```{r warning=FALSE}
+str(pcos)
+
+pcos$`II    beta-HCG(mIU/mL).x`<- as.numeric(pcos$`II    beta-HCG(mIU/mL).x`)
+pcos$`AMH(ng/mL).x` <- as.numeric(pcos$`AMH(ng/mL).x`)
+
+```
+
+Some of the columns (Fast food (Y/N),Marraige Status (Yrs), II    beta-HCG(mIU/mL).x, AMH(ng/mL)) have NA values. They have been replaced with the median value of the column.
+
+```{r}
+sapply(pcos, function(x) sum(is.na(x)))
+
+pcos$`Fast food (Y/N)`[is.na(pcos$`Fast food (Y/N)`)] <- median(pcos$`Fast food (Y/N)`, na.rm = T)
+pcos$`Marraige Status (Yrs)`[is.na(pcos$`Marraige Status (Yrs)`)] <- median(pcos$`Marraige Status (Yrs)`, na.rm = T)
+pcos$`II    beta-HCG(mIU/mL).x`[is.na(pcos$`II    beta-HCG(mIU/mL).x`)] <- median(pcos$`II    beta-HCG(mIU/mL).x`, na.rm = T)
+pcos$`AMH(ng/mL).x`[is.na(pcos$`AMH(ng/mL).x`)] <- median(pcos$`AMH(ng/mL).x`, na.rm = T)
+
+```
+
+We also removed two columns with little information (Sl. No, Patient File No.), hence they only contain information about file number of a patient.
+
+# Exploratory data analysis
+
+Lets have a look at the descriptive statistics, by using below code:
+```{r}
+summary(pcos)
+```
+
+Next we will look into variables in more details.
+In general, we can see that in our data set there are two types of variables - categorical and numeric. The answer to categorical variables is yes/no, which in data set is present as 1 and 0 respectively. 
+
+To this category belong below columns: PCOS(Y/N), Pregnant(Y/N), Weight_gain(Y/N), hair_growth(Y/N), Skin_darkening(Y/N), Hair_loss(Y/N),Pimples(Y/N), Fast_food(Y/N), Reg_Exercise(Y/N), Blood Group.
+
+Lets start with our target column PCOS(Y/N), which indicates wheater patient has or has not policystic ovary syndrome.
+```{r}
+ggplot(pcos, aes(x=factor(`PCOS (Y/N).x`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="PCOS(Y/N)", y = "count")
+
+mean(pcos$`PCOS (Y/N).x`=='1')
+```
+We can see that proportion of patients with PCOS is 0.327.
+
+Next we will look into the rest of the columns:
+
+Pregnant(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Pregnant(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Pregnant(Y/N)", y = "count")
+```
+
+Weight gain(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Weight gain(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Weight gain(Y/N)", y = "count")
+```
+
+Hair growth(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`hair growth(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Hair growth(Y/N)", y = "count")
+```
+
+Skin darkening (Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Skin darkening (Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Skin darkening (Y/N)", y = "count")
+```
+
+Hair loss(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Hair loss(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Hair loss(Y/N)", y = "count")
+```
+
+Pimples(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Pimples(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Pimples(Y/N)", y = "count")
+```
+
+Fast food (Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Fast food (Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Fast food (Y/N)", y = "count")
+```
+
+Reg.Exercise(Y/N)
+```{r}
+ggplot(pcos, aes(x=factor(`Reg.Exercise(Y/N)`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Reg.Exercise(Y/N)", y = "count")
+```
+
+Blood Group 
+```{r warning=FALSE}
+ggplot(pcos, aes(x=factor(`Blood Group`)))+
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Blood Group", y = "count")
+```
+
+Next we will look into some of the numerical variables.
+We will check the distribution of Age (yrs), Weight (Kg), BMI, Cycle length(days), Marraige Status (Yrs), No. of aborptions.
+
+Age in yrs
+```{r}
+ggplot(pcos, aes(x=`Age (yrs)`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Age (yrs)", y = "count")
+```
+Most of the patients is between 25 and 35 years old, which would confirm that from pcos suffer mainly woman in child bearing age.
+
+Weight (Kg)
+```{r warning=FALSE}
+ggplot(pcos, aes(x=`Weight (Kg)`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Weight (Kg)", y = "count")
+```
+
+BMI
+```{r warning=FALSE}
+ggplot(pcos, aes(x=`BMI`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="BMI", y = "count") +
+  geom_vline(xintercept = 18.5,color="red") + geom_vline(xintercept = 24.9, color="red")
+```
+
+Here we added additional vertical lines, which show the BMI range considered as normal 18.5 - 24.9.
+
+Cycle length(days)
+```{r warning=FALSE}
+ggplot(pcos, aes(x=`Cycle length(days)`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Cycle length(days)", y = "count")
+```
+
+Marraige Status (Yrs)
+```{r warning=FALSE}
+ggplot(pcos, aes(x=`Marraige Status (Yrs)`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="Marraige Status (Yrs)", y = "count")
+```
+
+No of aborptions
+```{r warning=FALSE}
+ggplot(pcos, aes(x=`No. of aborptions`))+
+  geom_histogram(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal() + labs( x="No. of aborptions", y = "count")
+```
+
+
+Next we will see the correlation between PCOS (Y/N) column and the rest of the columns.
+we will concentrate only on significant correlations, where  values are above 0.25.
+
+```{r}
+cor_pcos <- round(cor(pcos[ , colnames(pcos) != "PCOS (Y/N).x"],
+                pcos$`PCOS (Y/N).x`),2)
+
+data.frame(cor_pcos) %>%
+  rownames_to_column() %>%
+  gather(key="variable", value="correlation", -rowname) %>%
+  filter(abs(correlation) > 0.25)
+```
+We can see that only 9 variables have a correlation above 0.25.
+
+# Fitting a model
+
+Before we fit a model, we need to prepare our data set. That mean we need to divide our target and other variables. Because our target has binary values (0s and 1s), we will change it data type into factor.
+
+```{r}
+pcos$`PCOS (Y/N).x` <- factor(pcos$`PCOS (Y/N).x`)
+
+y <- pcos$`PCOS (Y/N).x`
+
+x <-subset(pcos, select = -`PCOS (Y/N).x` )
+```
+
+Next we will divide data into train and test set in proportion 20%.
+
+```{r}
+set.seed(1)    
+test_index <- createDataPartition(y, times = 1, p = 0.2, list = FALSE)
+test_x <- x[test_index,]
+train_x <- x[-test_index,]
+
+test_y <- y[test_index]
+train_y <- y[-test_index]
+```
+
+Nextly we  divide them into train and test sets.
+```{r}
+set.seed(1)
+test_index <- createDataPartition(y, times = 1, p = 0.2, list = FALSE)
+test_x <- x[test_index,]
+train_x <- x[-test_index,]
+
+test_y <- y[test_index]
+train_y <- y[-test_index]
+```
+## Logistic regression
+
+We will first apply the logistic regression.
+```{r message=FALSE, warning=FALSE}
+set.seed(1) 
+train_glm <- train(train_x, train_y, method = "glm")
+glm_preds <- predict(train_glm, test_x)
+mean(glm_preds == test_y)
+```
+The accuracy of this model is 0.872.
+
+## Linear discriminant analysis model (LDA)
+
+We can fit the LDA model using caret:
+```{r message=FALSE, warning=FALSE}
+set.seed(1)
+train_lda <- train(train_x, train_y, method = "lda")
+lda_preds <- predict(train_lda, test_x)
+mean(lda_preds == test_y)
+```
+Not surprisingly the achieved accuracy is similar to the logistic regression, hence the LDA satisfies the assumption of the linear logistic model. If the additional assumption made by LDA is appropriate, LDA tends to estimate the parameters more efficiently by using more information about the data. In practice, logistic regression and LDA often give similar results.
+
+## Quadratic discriminant analysis model (QDA)
+
+Lets fit the QDA model with below code:
+
+set.seed(1)
+train_qda <- train(train_x, train_y, method = "qda")
+qda_preds <- predict(train_qda, test_x)
+mean(qda_preds == test_y)
+
+0.862
+
+With this model we achieve accuracy of 0.862, which is worse than models before.
+
+
+## K-nearest neighbors (kNN)
+
+K-nearest neighbors (kNN) estimates the conditional probabilities in a similar way to bin smoothing. However, kNN is easier to adapt to multiple dimensions. We will try to fit the model with below code:
+```{r}
+set.seed(1)
+train_knn <- train(train_x, train_y,
+                   method = "knn")
+knn_preds <- predict(train_knn, test_x)
+mean(knn_preds == test_y)
+```
+The accuracy in this case is 0.642.
+
+## K-nearest neighbors (kNN) with cross validation
+
+We will now make a similar analysis but this time we will try to use cross validation to select the optimal k value.
+
+```{r}
+set.seed(1)
+tuning <- data.frame(k = seq(3, 21, 2))
+train_knn_v <- train(train_x, train_y,
+                   method = "knn", 
+                   tuneGrid = tuning)
+train_knn_v$bestTune
+
+knn_preds_v <- predict(train_knn_v, test_x)
+mean(knn_preds_v == test_y)
+```
+The accuracy is only 0.661
+
+# Random forest model
+
+Random forests  are used in prediction problems where the outcome is categorical - like in our case. The goal is to improve prediction performance and reduce instability by averaging multiple decision trees (a forest of trees constructed with randomness).
+
+```{r}
+set.seed(1)
+tuning <- data.frame(mtry = c(3, 5, 7, 9))
+train_rf <- train(train_x, train_y,
+                  method = "rf",
+                  tuneGrid = tuning,
+                  importance = TRUE)
+train_rf$bestTune
+
+rf_preds <- predict(train_rf, test_x)
+mean(rf_preds == test_y)
+```
+The obtained accuracy is 0.908, which is the highest achieved value until now.
+
+We can also see the list of the most important variables in terms of predicting PCOS:
+```{r}
+varImp(train_rf)
+```
+
+It looks like the crucial information is the number of follicle in both ovaries (left and right).
+
+## Ensembles
+
+The idea of an ensemble is to combine the data from different models to obtain a better estimate.
+
+In machine learning, one can usually greatly improve the final results by combining the results of different algorithms.
+
+
+ensemble <- cbind(glm = glm_preds == "1", lda = lda_preds == "1", qda = qda_preds == "1", rf = rf_preds == "1", knn = knn_preds == "1", knn_v = knn_preds_v == "1")
+
+ensemble_preds <- ifelse(rowMeans(ensemble) > 0.5, "1", "0")
+mean(ensemble_preds == test_y)
+
+The accuracy in this case is 0.890
+
+## Selecting final model
+
+Lets get all the accuracies in one table, to compare which model performs the best in predicting PCOS:
+
+```{r, echo=FALSE}
+models <- c("Logistic regression","LDA", "QDA", "Knn", "Knn with cross validation", "Random forest", "Ensemble")
+accuracy <- c(mean(glm_preds == test_y),
+              mean(lda_preds == test_y),
+              0.862,
+              mean(knn_preds == test_y),
+              mean(knn_preds_v == test_y),
+              mean(rf_preds == test_y),
+              0.89)
+data.frame(Model = models, Accuracy = accuracy)
+
+#manual input due to the knit problem, the R code works
+```
+The model with the best accuracy of 0.908 is the random forest model.
+
+# Conclusion
+
+Polycystic Ovary Syndrome (PCOS) is a medical condition 
+which causes hormonal disorder in women in their 
+childbearing years. Women with PCOS suffer from many symptoms and risk infertility. The scope of this project was to create a detection system, which would predict whether a woman has or has not PCOS, based on her medical parameters results. The Random Forest Classifier was found to be the most reliable and most accurate among others presented in this paper with accuracy being 90.8%.
